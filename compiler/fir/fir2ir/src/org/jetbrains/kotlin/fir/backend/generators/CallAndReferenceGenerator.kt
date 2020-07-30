@@ -428,6 +428,12 @@ class CallAndReferenceGenerator(
                     val irClass = symbol.owner
                     val irConstructor = (annotationCall.toResolvedCallableSymbol() as? FirConstructorSymbol)?.let {
                         this.declarationStorage.getIrConstructorSymbol(it)
+                    } ?: run {
+                        // Fallback for FirReferencePlaceholderForResolvedAnnotations from jar
+                        val fir = coneType.lookupTag.toSymbol(session)?.fir as? FirClass<*>
+                        fir?.getPrimaryConstructorIfAny()?.let { firConstructor ->
+                            this.declarationStorage.getIrConstructorSymbol(firConstructor.symbol)
+                        }
                     }
                     if (irConstructor == null) {
                         IrErrorCallExpressionImpl(startOffset, endOffset, type, "No annotation constructor found: ${irClass.name}")
