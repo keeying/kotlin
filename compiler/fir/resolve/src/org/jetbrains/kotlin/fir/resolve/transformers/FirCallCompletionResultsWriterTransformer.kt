@@ -10,7 +10,6 @@ import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.*
 import org.jetbrains.kotlin.fir.diagnostics.ConeSimpleDiagnostic
 import org.jetbrains.kotlin.fir.expressions.*
-import org.jetbrains.kotlin.fir.expressions.builder.buildVarargArgumentsExpression
 import org.jetbrains.kotlin.fir.references.builder.buildErrorNamedReference
 import org.jetbrains.kotlin.fir.references.builder.buildResolvedCallableReference
 import org.jetbrains.kotlin.fir.references.builder.buildResolvedNamedReference
@@ -25,6 +24,7 @@ import org.jetbrains.kotlin.fir.resolve.inference.isSuspendFunctionType
 import org.jetbrains.kotlin.fir.resolve.inference.returnType
 import org.jetbrains.kotlin.fir.resolve.propagateTypeFromQualifiedAccessAfterNullCheck
 import org.jetbrains.kotlin.fir.resolve.substitution.ConeSubstitutor
+import org.jetbrains.kotlin.fir.resolve.transformers.body.resolve.FirArrayOfCallTransformer
 import org.jetbrains.kotlin.fir.resolve.transformers.body.resolve.remapArgumentsWithVararg
 import org.jetbrains.kotlin.fir.resolve.transformers.body.resolve.resultType
 import org.jetbrains.kotlin.fir.resolvedTypeFromPrototype
@@ -41,7 +41,6 @@ import org.jetbrains.kotlin.types.AbstractTypeApproximator
 import org.jetbrains.kotlin.types.TypeApproximatorConfiguration
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
-import kotlin.math.min
 
 class FirCallCompletionResultsWriterTransformer(
     override val session: FirSession,
@@ -55,8 +54,20 @@ class FirCallCompletionResultsWriterTransformer(
 
     private val declarationWriter by lazy { FirDeclarationCompletionResultsWriter(finalSubstitutor) }
 
+    private val arrayOfCallTransformer = FirArrayOfCallTransformer()
+    private var enableArrayOfCallTransformation = false
+
     enum class Mode {
         Normal, DelegatedPropertyCompletion
+    }
+
+    private inline fun <T> withFirArrayOfCallTransformer(block: () -> T): T {
+        enableArrayOfCallTransformation = true
+        return try {
+            block()
+        } finally {
+            enableArrayOfCallTransformation = false
+        }
     }
 
     private fun <T : FirQualifiedAccessExpression> prepareQualifiedTransform(
@@ -160,6 +171,12 @@ class FirCallCompletionResultsWriterTransformer(
             result.transformExplicitReceiver(typeUpdater, null)
         }
 
+        if (enableArrayOfCallTransformation) {
+            arrayOfCallTransformer.toArrayOfCall(result)?.let {
+                return it.compose()
+            }
+        }
+
         return result.compose()
     }
 
@@ -175,7 +192,9 @@ class FirCallCompletionResultsWriterTransformer(
         )
         val subCandidate = calleeReference.candidate
         val expectedArgumentsTypeMapping = runIf(!calleeReference.isError) { subCandidate.createArgumentsMapping() }
-        annotationCall.argumentList.transformArguments(this, expectedArgumentsTypeMapping)
+        withFirArrayOfCallTransformer {
+            annotationCall.argumentList.transformArguments(this, expectedArgumentsTypeMapping)
+        }
         if (!calleeReference.isError) {
             subCandidate.handleVarargs(annotationCall.argumentList)
             subCandidate.argumentMapping?.let {
