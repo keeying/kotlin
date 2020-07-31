@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.fir.symbols.CallableId
 import org.jetbrains.kotlin.fir.symbols.impl.*
 import org.jetbrains.kotlin.fir.types.builder.buildResolvedTypeRef
 import org.jetbrains.kotlin.fir.types.impl.ConeTypeParameterTypeImpl
+import org.jetbrains.kotlin.fir.types.jvm.FirJavaTypeRef
 import org.jetbrains.kotlin.load.java.JavaClassFinder
 import org.jetbrains.kotlin.load.java.JvmAnnotationNames
 import org.jetbrains.kotlin.load.java.structure.*
@@ -251,7 +252,11 @@ class JavaSymbolProvider(
                         if (classIsAnnotation) {
                             val parameterForAnnotationConstructor = buildJavaValueParameter {
                                 session = this@JavaSymbolProvider.session
-                                returnTypeRef = firJavaMethod.returnTypeRef
+                                returnTypeRef = buildResolvedTypeRef {
+                                    type = (firJavaMethod.returnTypeRef as FirJavaTypeRef).type.toConeKotlinTypeWithoutEnhancement(
+                                        this@JavaSymbolProvider.session, javaTypeParameterStack, forAnnotationValueParameter = true
+                                    )
+                                }
                                 name = firJavaMethod.name
                                 if (javaMethod.hasAnnotationParameterDefaultValue) {
                                     defaultValue = buildExpressionStub()

@@ -272,19 +272,22 @@ class FirSignatureEnhancement(
         ownerParameter: FirJavaValueParameter,
         index: Int
     ): EnhanceValueParameterResult {
-        val signatureParts = ownerFunction.partsForValueParameter(
-            typeQualifierResolver,
-            overriddenMembers,
-            parameterContainer = ownerParameter,
-            methodContext = memberContext,
-            typeInSignature = TypeInSignature.ValueParameter(hasReceiver, index)
-        ).enhance(
-            session,
-            jsr305State,
-            predefinedEnhancementInfo?.parametersInfo?.getOrNull(index),
-            forAnnotationValueParameter = owner.classKind == ClassKind.ANNOTATION_CLASS
-        )
-        val firResolvedTypeRef = signatureParts.type
+        val firResolvedTypeRef = (ownerParameter.returnTypeRef as? FirResolvedTypeRef)
+            ?: run {
+                val signatureParts = ownerFunction.partsForValueParameter(
+                    typeQualifierResolver,
+                    overriddenMembers,
+                    parameterContainer = ownerParameter,
+                    methodContext = memberContext,
+                    typeInSignature = TypeInSignature.ValueParameter(hasReceiver, index)
+                ).enhance(
+                    session,
+                    jsr305State,
+                    predefinedEnhancementInfo?.parametersInfo?.getOrNull(index),
+                    forAnnotationValueParameter = owner.classKind == ClassKind.ANNOTATION_CLASS
+                )
+                signatureParts.type
+            }
         val defaultValueExpression = when (val defaultValue = ownerParameter.getDefaultValueFromAnnotation()) {
             NullDefaultValue -> buildConstExpression(null, FirConstKind.Null, null)
             is StringDefaultValue -> firResolvedTypeRef.type.lexicalCastFrom(session, defaultValue.value)
@@ -311,8 +314,6 @@ class FirSignatureEnhancement(
         ).enhance(session, jsr305State, predefinedEnhancementInfo?.returnTypeInfo)
         return signatureParts.type
     }
-
-    private val overrideBindCache = mutableMapOf<Name, Map<FirCallableSymbol<*>?, List<FirCallableSymbol<*>>>>()
 
     private sealed class TypeInSignature {
         abstract fun getTypeRef(member: FirCallableMemberDeclaration<*>): FirTypeRef
